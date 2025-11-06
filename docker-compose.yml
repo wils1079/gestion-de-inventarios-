@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gestion-inventarios:latest
+    ports:
+      - "8080:80"
+    volumes:
+      - ./:/var/www/html:cached
+      - ./data:/var/www/html/api/data
+    environment:
+      - DB_FILE=/var/www/html/api/data/database.sqlite
+    restart: unless-stopped
