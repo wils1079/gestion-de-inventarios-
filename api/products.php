@@ -1,8 +1,20 @@
 <?php
+// products.php
+header("Access-Control-Allow-Origin: *");
+header("Content-Type: application/json; charset=UTF-8");
+header("Access-Control-Allow-Methods: POST, GET, PUT, DELETE");
+header("Access-Control-Max-Age: 3600");
+header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
+
 require_once __DIR__ . '/database.php';
-$pdo = Database::get();
+
+// Instanciar base de datos y conectar
+$database = new Database();
+$pdo = $database->getConnection();
 
 $method = $_SERVER['REQUEST_METHOD'];
+$input = json_decode(file_get_contents('php://input'), true);
+
 // GET handlers: list, stats, search, single
 if($method === 'GET'){
     if(isset($_GET['action']) && $_GET['action'] === 'stats'){
@@ -21,6 +33,7 @@ if($method === 'GET'){
     if(isset($_GET['action']) && $_GET['action'] === 'search'){
         $q = $_GET['q'] ?? '';
         $cat = $_GET['categoria'] ?? '';
+        // SQL Ajustado para MySQL (Concatenación y lógica estándar)
         $sql = "SELECT p.*, c.nombre as categoria_nombre FROM products p LEFT JOIN categories c ON c.id = p.categoria_id WHERE 1=1";
         $params = [];
         if($q !== ''){
@@ -31,39 +44,25 @@ if($method === 'GET'){
             $sql .= " AND p.categoria_id = :cat";
             $params[':cat'] = $cat;
         }
-        $sql .= " ORDER BY p.id ASC";
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        echo json_encode($rows);
+        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
         exit;
     }
-
-    if(isset($_GET['id'])){
-        $stmt = $pdo->prepare("SELECT p.*, c.nombre as categoria_nombre FROM products p LEFT JOIN categories c ON c.id = p.categoria_id WHERE p.id = :id");
-        $stmt->execute([':id'=>$_GET['id']]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        echo json_encode($row ?: (object)[]);
-        exit;
-    }
-
-    // default: return all
-    $stmt = $pdo->query("SELECT p.*, c.nombre as categoria_nombre FROM products p LEFT JOIN categories c ON c.id = p.categoria_id ORDER BY p.id ASC");
+    
+    // Listar productos por defecto
+    $stmt = $pdo->query("SELECT p.*, c.nombre as categoria_nombre FROM products p LEFT JOIN categories c ON c.id = p.categoria_id ORDER BY p.created_at DESC");
     echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
     exit;
 }
 
-// read JSON body
-$input = json_decode(file_get_contents('php://input'), true);
-
 if($method === 'POST'){
-    // create
     $sql = "INSERT INTO products (nombre, descripcion, categoria_id, cantidad, precio, stock_minimo) VALUES (:nombre, :descripcion, :categoria_id, :cantidad, :precio, :stock_minimo)";
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
         ':nombre'=>$input['nombre'] ?? '',
         ':descripcion'=>$input['descripcion'] ?? '',
-        ':categoria_id'=>$input['categoria_id'] ?: null,
+        ':categoria_id'=>!empty($input['categoria_id']) ? $input['categoria_id'] : null,
         ':cantidad'=>intval($input['cantidad'] ?? 0),
         ':precio'=>floatval($input['precio'] ?? 0),
         ':stock_minimo'=>intval($input['stock_minimo'] ?? 10)
@@ -73,13 +72,14 @@ if($method === 'POST'){
 }
 
 if($method === 'PUT'){
-    $sql = "UPDATE products SET nombre=:nombre, descripcion=:descripcion, categoria_id=:categoria_id, cantidad=:cantidad, precio=:precio, stock_minimo=:stock_minimo, updated_at=CURRENT_TIMESTAMP WHERE id=:id";
+    // MySQL usa CURRENT_TIMESTAMP, igual que SQLite, esto es compatible
+    $sql = "UPDATE products SET nombre=:nombre, descripcion=:descripcion, categoria_id=:categoria_id, cantidad=:cantidad, precio=:precio, stock_minimo=:stock_minimo WHERE id=:id";
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
         ':id'=>$input['id'],
         ':nombre'=>$input['nombre'] ?? '',
         ':descripcion'=>$input['descripcion'] ?? '',
-        ':categoria_id'=>$input['categoria_id'] ?: null,
+        ':categoria_id'=>!empty($input['categoria_id']) ? $input['categoria_id'] : null,
         ':cantidad'=>intval($input['cantidad'] ?? 0),
         ':precio'=>floatval($input['precio'] ?? 0),
         ':stock_minimo'=>intval($input['stock_minimo'] ?? 10)
@@ -89,11 +89,10 @@ if($method === 'PUT'){
 }
 
 if($method === 'DELETE'){
-    if(!isset($_GET['id'])) { echo json_encode(['success'=>false,'error'=>'id required']); exit; }
-    $stmt = $pdo->prepare("DELETE FROM products WHERE id=:id");
-    $stmt->execute([':id'=>$_GET['id']]);
+    if(!isset($_GET['id'])) { echo json_encode(['success'=>false,'error'=>'Falta ID']); exit; }
+    $stmt = $pdo->prepare("DELETE FROM products WHERE id = ?");
+    $stmt->execute([$_GET['id']]);
     echo json_encode(['success'=>true]);
     exit;
 }
-
-echo json_encode(['success'=>false]);
+?>
